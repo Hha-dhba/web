@@ -22,13 +22,29 @@ if 'username' not in st.session_state: st.session_state.username = ''
 if 'current_page' not in st.session_state: st.session_state.current_page = 'home' # home, booking, history
 if 'selected_movie' not in st.session_state: st.session_state.selected_movie = ''
 
+# Bộ nhớ tạm để lưu danh sách tài khoản dùng thử (Mock Database)
+if 'registered_users' not in st.session_state: 
+    st.session_state.registered_users = {'admin': '123'}
+
 # ==========================================
-# 3. HÀM CHUYỂN TRANG
+# 3. HÀM CHUYỂN TRANG & POPUP QUẢNG CÁO
 # ==========================================
 def navigate_to(page, movie=""):
     st.session_state.current_page = page
     if movie: st.session_state.selected_movie = movie
     st.rerun()
+
+@st.dialog("🔥 SIÊU PHẨM SẮP RA MẮT TẠI SUNNYX CINEMA", width="large")
+def show_advertisement():
+    st.markdown("<h3 style='text-align: center; color: #FFC107; margin-top:0; font-weight: 800;'>ĐÓN XEM BOM TẤN MÙA HÈ</h3>", unsafe_allow_html=True)
+    st.image("https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=2070", use_column_width=True)
+    st.markdown("<p style='text-align:center; color:#CCC; margin-top: 15px;'>Suất chiếu đặc biệt. Đặt vé ngay hôm nay để nhận combo bắp nước miễn phí!</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("❌ ĐÓNG QUẢNG CÁO & VÀO RẠP", type="primary", use_container_width=True):
+            st.session_state.ad_closed = True
+            st.rerun()
 
 # ==========================================
 # 4. CSS DÀNH CHO GIAO DIỆN (Navy Dark)
@@ -97,34 +113,68 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. SIDEBAR: ĐĂNG NHẬP / XÁC THỰC
+# 5. SIDEBAR: ĐĂNG NHẬP / ĐĂNG KÝ
 # ==========================================
 with st.sidebar:
     st.markdown("<h2 style='text-align: center; color: #FFC107;'>🔒 TÀI KHOẢN</h2>", unsafe_allow_html=True)
     
     if not st.session_state.is_logged_in:
         st.info("Vui lòng đăng nhập hệ thống.")
-        with st.form("login_form"):
-            st.markdown("*(Gợi ý: Mật khẩu là 123. Tài khoản `admin` để vào quản trị)*")
-            username_input = st.text_input("Tên đăng nhập")
-            password_input = st.text_input("Mật khẩu", type="password")
-            submitted = st.form_submit_button("ĐĂNG NHẬP", type="primary")
-            
-            if submitted:
-                if username_input == "" or password_input == "":
-                    st.error("Vui lòng nhập đủ thông tin!")
-                elif password_input != "123":
-                    st.error("Mật khẩu không đúng!")
-                else:
-                    st.session_state.is_logged_in = True
-                    st.session_state.username = username_input
-                    if username_input.lower() == 'admin':
-                        st.session_state.user_role = "admin"
-                        st.session_state.current_page = "admin_dash"
+        
+        # Tạo 2 Tabs cho Đăng nhập và Đăng ký
+        tab_login, tab_register = st.tabs(["🔑 Đăng Nhập", "📝 Đăng Ký"])
+        
+        with tab_login:
+            with st.form("login_form"):
+                st.markdown("*(Gợi ý: Tài khoản `admin` - Mật khẩu `123`)*")
+                username_input = st.text_input("Tên đăng nhập")
+                password_input = st.text_input("Mật khẩu", type="password")
+                submitted = st.form_submit_button("ĐĂNG NHẬP", type="primary")
+                
+                if submitted:
+                    if username_input == "" or password_input == "":
+                        st.error("Vui lòng nhập đủ thông tin!")
+                    # Kiểm tra tài khoản trong mock database
+                    elif username_input in st.session_state.registered_users and st.session_state.registered_users[username_input] == password_input:
+                        st.session_state.is_logged_in = True
+                        st.session_state.username = username_input
+                        if username_input.lower() == 'admin':
+                            st.session_state.user_role = "admin"
+                            st.session_state.current_page = "admin_dash"
+                        else:
+                            st.session_state.user_role = "customer"
+                            st.session_state.current_page = "home"
+                        st.rerun()
                     else:
-                        st.session_state.user_role = "customer"
-                        st.session_state.current_page = "home"
-                    st.rerun()
+                        # Fallback cho tài khoản mặc định nhập bừa
+                        if password_input == "123" and username_input != 'admin':
+                            st.session_state.is_logged_in = True
+                            st.session_state.username = username_input
+                            st.session_state.user_role = "customer"
+                            st.session_state.current_page = "home"
+                            st.rerun()
+                        else:
+                            st.error("Tài khoản hoặc mật khẩu không đúng!")
+        
+        with tab_register:
+            with st.form("register_form"):
+                st.markdown("Tạo tài khoản Khách hàng mới")
+                new_username = st.text_input("Tên đăng nhập mới")
+                new_password = st.text_input("Mật khẩu", type="password")
+                confirm_password = st.text_input("Xác nhận mật khẩu", type="password")
+                reg_submitted = st.form_submit_button("ĐĂNG KÝ", type="primary")
+                
+                if reg_submitted:
+                    if new_username == "" or new_password == "":
+                        st.error("Vui lòng nhập đầy đủ thông tin!")
+                    elif new_password != confirm_password:
+                        st.error("Mật khẩu xác nhận không khớp!")
+                    elif new_username in st.session_state.registered_users:
+                        st.error("Tên đăng nhập đã tồn tại! Vui lòng chọn tên khác.")
+                    else:
+                        st.session_state.registered_users[new_username] = new_password
+                        st.success("🎉 Đăng ký thành công! Chuyển sang tab Đăng Nhập để vào rạp nhé.")
+                        
     else:
         st.success(f"👋 Xin chào, **{st.session_state.username}**!")
         st.caption(f"Vai trò: {st.session_state.user_role.upper()}")
@@ -226,7 +276,7 @@ elif st.session_state.current_page == 'home':
     </div>
     """, unsafe_allow_html=True)
     
-    # Đặt vé nhanh (Đã xóa ô chọn rạp vì chỉ có 1 cơ sở)
+    # Đặt vé nhanh
     with st.container():
         st.markdown('<div class="glass-effect" style="padding: 25px; margin-top: -30px; margin-bottom:30px; position:relative; z-index:10;">', unsafe_allow_html=True)
         st.markdown("<h4 style='color:#FFC107; margin-top:0;'>🎟️ TÌM SUẤT CHIẾU NHANH</h4>", unsafe_allow_html=True)
@@ -333,5 +383,10 @@ elif st.session_state.current_page == 'history':
         "Tổng tiền": ["170.000 đ", "95.000 đ"],
         "Trạng thái": ["Đã xem", "Đã xem"]
     })
-    st.dataframe(df_history, use_container_width=
-    True, hide_index=True)
+    st.dataframe(df_history, use_container_width=True, hide_index=True)
+
+# ==========================================
+# 7. GỌI HIỂN THỊ QUẢNG CÁO TẠI TRANG CHỦ
+# ==========================================
+if not st.session_state.ad_closed and st.session_state.current_page == 'home' and st.session_state.user_role != 'admin':
+    show_advertisement()
