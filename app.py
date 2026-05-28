@@ -22,7 +22,7 @@ if 'username' not in st.session_state: st.session_state.username = ''
 if 'current_page' not in st.session_state: st.session_state.current_page = 'home' # home, booking, history
 if 'selected_movie' not in st.session_state: st.session_state.selected_movie = ''
 
-# Thêm biến lưu trữ các ghế đang chọn
+# Thêm biến lưu trữ các ghế đang chọn (Dùng cho sơ đồ ghế mới)
 if 'selected_seats' not in st.session_state: st.session_state.selected_seats = []
 
 # Bộ nhớ tạm để lưu danh sách tài khoản dùng thử (Mock Database)
@@ -36,7 +36,7 @@ def navigate_to(page, movie=""):
     st.session_state.current_page = page
     if movie: 
         st.session_state.selected_movie = movie
-        st.session_state.selected_seats = [] # Reset ghế khi đổi phim mới
+        st.session_state.selected_seats = [] # Reset ghế khi đổi sang phim khác
     st.rerun()
 
 @st.dialog("🔥 SIÊU PHẨM SẮP RA MẮT TẠI SUNNYX CINEMA", width="large")
@@ -138,7 +138,7 @@ st.markdown("""
     .movie-meta b { color: #333; }
     
     /* Màn hình chiếu phim */
-    .seat-screen { background: #E71A0F; text-align: center; color: white; font-weight: 900; padding: 5px; border-radius: 4px; margin-bottom: 30px; letter-spacing: 5px;}
+    .seat-screen { background: #E71A0F; text-align: center; color: white; font-weight: 900; padding: 5px; border-radius: 4px; margin-bottom: 30px; letter-spacing: 5px; box-shadow: 0 4px 10px rgba(231,26,15,0.3);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -174,6 +174,7 @@ with st.sidebar:
                             st.session_state.current_page = "home"
                         st.rerun()
                     else:
+                        # Fallback cho phép đăng nhập thử
                         if password_input == "123" and username_input != 'admin':
                             st.session_state.is_logged_in = True
                             st.session_state.username = username_input
@@ -350,37 +351,35 @@ elif st.session_state.current_page == 'booking':
     st.markdown(f"## 🎫 ĐẶT VÉ: {st.session_state.selected_movie}")
     st.info("📍 Địa điểm: Sunnyx Cinema Center | 🎬 Phòng: IMAX 01 | ⏰ Suất: 20:30 - Hôm nay")
     
-    st.markdown('<div class="seat-screen">MÀN HÌNH</div>', unsafe_allow_html=True)
+    st.markdown('<div class="seat-screen">MÀN HÌNH CHÍNH</div>', unsafe_allow_html=True)
     st.write("")
     
-    # --- GIAO DIỆN CHỌN GHẾ HOÀN TOÀN MỚI BẰNG NÚT BẤM ĐỒNG BỘ ---
+    # --- SỬA LỖI LỒI LÕM: CHUYỂN TOÀN BỘ SANG BUTTON ĐỒNG BỘ ---
     seat_rows = ['A', 'B', 'C', 'D']
     
     for row in seat_rows:
-        cols = st.columns(8) # Chia đều 8 cột ngang bằng nhau
+        cols = st.columns(8) # Chia đều 8 cột
         for i, col in enumerate(cols):
             seat_name = f"{row}{i+1}"
             with col:
-                # Mô phỏng ghế ngẫu nhiên đã bị đặt (khóa lại)
+                # Giả lập ghế đã có người mua (Bị khóa)
                 is_booked = (hash(seat_name) % 5 == 0) 
                 
                 if is_booked:
                     st.button(seat_name, key=f"seat_{seat_name}", disabled=True, use_container_width=True)
                 else:
-                    # Kiểm tra xem ghế này người dùng đang chọn hay chưa
+                    # Logic kiểm tra ghế có đang được user chọn không
                     is_selected = seat_name in st.session_state.selected_seats
                     
-                    # Nếu chọn thì nút chuyển thành màu chính (Đỏ), chưa chọn thì màu phụ (Xám)
+                    # Màu "primary" (Đỏ) cho ghế đang chọn, "secondary" (Xám) cho ghế trống
                     btn_type = "primary" if is_selected else "secondary"
                     
-                    # Hiển thị nút ghế đồng bộ kích thước
                     if st.button(seat_name, key=f"seat_{seat_name}", type=btn_type, use_container_width=True):
-                        # Logic bấm nút để Chọn/Hủy ghế
                         if is_selected:
                             st.session_state.selected_seats.remove(seat_name)
                         else:
                             st.session_state.selected_seats.append(seat_name)
-                        st.rerun() # Tải lại trang ngay lập tức để đổi màu nút
+                        st.rerun() # Refresh ngay để đổi màu nút
                         
     st.divider()
     
@@ -392,7 +391,7 @@ elif st.session_state.current_page == 'booking':
     with col_sum2:
         if st.button("THANH TOÁN", type="primary", use_container_width=True, disabled=(num_selected==0)):
             st.success("Thanh toán thành công! Vé đã được lưu vào Lịch sử.")
-            st.session_state.selected_seats = [] # Reset ghế sau khi mua xong
+            st.session_state.selected_seats = [] # Reset sau khi mua
 
 # ------------------------------------------
 # D. GIAO DIỆN KHÁCH HÀNG - LỊCH SỬ VÉ
