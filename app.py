@@ -22,6 +22,9 @@ if 'username' not in st.session_state: st.session_state.username = ''
 if 'current_page' not in st.session_state: st.session_state.current_page = 'home' # home, booking, history
 if 'selected_movie' not in st.session_state: st.session_state.selected_movie = ''
 
+# Thêm biến lưu trữ các ghế đang chọn
+if 'selected_seats' not in st.session_state: st.session_state.selected_seats = []
+
 # Bộ nhớ tạm để lưu danh sách tài khoản dùng thử (Mock Database)
 if 'registered_users' not in st.session_state: 
     st.session_state.registered_users = {'admin': '123'}
@@ -31,7 +34,9 @@ if 'registered_users' not in st.session_state:
 # ==========================================
 def navigate_to(page, movie=""):
     st.session_state.current_page = page
-    if movie: st.session_state.selected_movie = movie
+    if movie: 
+        st.session_state.selected_movie = movie
+        st.session_state.selected_seats = [] # Reset ghế khi đổi phim mới
     st.rerun()
 
 @st.dialog("🔥 SIÊU PHẨM SẮP RA MẮT TẠI SUNNYX CINEMA", width="large")
@@ -132,9 +137,7 @@ st.markdown("""
     .movie-meta { font-size: 0.9rem; color: #555; margin: 0 0 5px 0; line-height: 1.5; }
     .movie-meta b { color: #333; }
     
-    /* Giao diện ghế ngồi */
-    .seat { text-align: center; background: #E0E0E0; padding: 10px; border-radius: 6px; margin: 5px; cursor: pointer; color: #333; font-weight:bold; border: 1px solid #CCC;}
-    .seat-booked { background: #CCC !important; color: #888 !important; cursor: not-allowed; text-decoration: line-through;}
+    /* Màn hình chiếu phim */
     .seat-screen { background: #E71A0F; text-align: center; color: white; font-weight: 900; padding: 5px; border-radius: 4px; margin-bottom: 30px; letter-spacing: 5px;}
 </style>
 """, unsafe_allow_html=True)
@@ -213,6 +216,7 @@ with st.sidebar:
             st.session_state.user_role = 'guest'
             st.session_state.username = ''
             st.session_state.current_page = 'home'
+            st.session_state.selected_seats = []
             st.rerun()
 
 # ==========================================
@@ -297,13 +301,12 @@ elif st.session_state.current_page == 'home':
         with qb2: st.selectbox("Ngày Xem", ["Hôm nay", "Ngày mai"])
         with qb3: st.selectbox("Suất Chiếu", ["09:30 (IMAX)", "13:15 (3D)", "20:30 (2D)"])
         with qb4: 
-            st.write("<div style='margin-top: 28px;'>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             if st.button("MUA VÉ", type="primary", use_container_width=True):
                 if not st.session_state.is_logged_in:
                     st.error("⚠️ Vui lòng đăng nhập để đặt vé!")
                 else:
                     navigate_to("booking", "Dune: Hành Tinh Cát 2")
-            st.write("</div>", unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # Tiêu đề Danh sách phim
@@ -348,31 +351,48 @@ elif st.session_state.current_page == 'booking':
     st.info("📍 Địa điểm: Sunnyx Cinema Center | 🎬 Phòng: IMAX 01 | ⏰ Suất: 20:30 - Hôm nay")
     
     st.markdown('<div class="seat-screen">MÀN HÌNH</div>', unsafe_allow_html=True)
+    st.write("")
     
+    # --- GIAO DIỆN CHỌN GHẾ HOÀN TOÀN MỚI BẰNG NÚT BẤM ĐỒNG BỘ ---
     seat_rows = ['A', 'B', 'C', 'D']
-    selected_seats = []
     
     for row in seat_rows:
-        cols = st.columns(8)
+        cols = st.columns(8) # Chia đều 8 cột ngang bằng nhau
         for i, col in enumerate(cols):
             seat_name = f"{row}{i+1}"
             with col:
+                # Mô phỏng ghế ngẫu nhiên đã bị đặt (khóa lại)
                 is_booked = (hash(seat_name) % 5 == 0) 
                 
                 if is_booked:
-                    st.button(seat_name, key=f"seat_{seat_name}", disabled=True)
+                    st.button(seat_name, key=f"seat_{seat_name}", disabled=True, use_container_width=True)
                 else:
-                    if st.checkbox(seat_name, key=f"chk_{seat_name}"):
-                        selected_seats.append(seat_name)
+                    # Kiểm tra xem ghế này người dùng đang chọn hay chưa
+                    is_selected = seat_name in st.session_state.selected_seats
+                    
+                    # Nếu chọn thì nút chuyển thành màu chính (Đỏ), chưa chọn thì màu phụ (Xám)
+                    btn_type = "primary" if is_selected else "secondary"
+                    
+                    # Hiển thị nút ghế đồng bộ kích thước
+                    if st.button(seat_name, key=f"seat_{seat_name}", type=btn_type, use_container_width=True):
+                        # Logic bấm nút để Chọn/Hủy ghế
+                        if is_selected:
+                            st.session_state.selected_seats.remove(seat_name)
+                        else:
+                            st.session_state.selected_seats.append(seat_name)
+                        st.rerun() # Tải lại trang ngay lập tức để đổi màu nút
                         
     st.divider()
+    
+    num_selected = len(st.session_state.selected_seats)
     col_sum1, col_sum2 = st.columns([3, 1])
     with col_sum1:
-        st.markdown(f"**Ghế bạn đang chọn:** {', '.join(selected_seats) if selected_seats else 'Chưa chọn ghế'}")
-        st.markdown(f"**Tổng tiền:** <span style='color:#E71A0F; font-size: 1.2rem; font-weight:bold;'>{len(selected_seats) * 85000:,} VNĐ</span>", unsafe_allow_html=True)
+        st.markdown(f"**Ghế bạn đang chọn:** {', '.join(st.session_state.selected_seats) if num_selected > 0 else 'Chưa chọn ghế'}")
+        st.markdown(f"**Tổng tiền:** <span style='color:#E71A0F; font-size: 1.2rem; font-weight:bold;'>{num_selected * 85000:,} VNĐ</span>", unsafe_allow_html=True)
     with col_sum2:
-        if st.button("THANH TOÁN", type="primary", use_container_width=True, disabled=len(selected_seats)==0):
+        if st.button("THANH TOÁN", type="primary", use_container_width=True, disabled=(num_selected==0)):
             st.success("Thanh toán thành công! Vé đã được lưu vào Lịch sử.")
+            st.session_state.selected_seats = [] # Reset ghế sau khi mua xong
 
 # ------------------------------------------
 # D. GIAO DIỆN KHÁCH HÀNG - LỊCH SỬ VÉ
