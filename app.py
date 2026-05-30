@@ -118,6 +118,23 @@ st.markdown("""
     .movie-title { font-size: 1.1rem !important; font-weight: 900 !important; color: #5C161B !important; text-transform: uppercase; margin-bottom: 10px !important; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8rem;}
     .movie-info-text { font-size: 0.85rem; color: #555; margin: 0 0 5px 0; border-bottom: 1px dotted #CCC; padding-bottom: 5px;}
     .seat-screen { background: #5C161B; text-align: center; color: #D4AF37; font-family: 'Playfair Display', serif; font-size: 1.5rem; font-weight: 900; padding: 10px; border-radius: 4px; margin-bottom: 30px; letter-spacing: 8px; border: 2px double #D4AF37; box-shadow: inset 0 0 10px rgba(0,0,0,0.5);}
+/* --- VŨ KHÍ HỦY DIỆT: ÉP PHÔNG CHỮ NHỎ LẠI VÀ XÓA LỀ --- */
+    
+    /* Ép tất cả các nút phụ (ghế) phải mỏng dính */
+    button[kind="secondary"] {
+        padding: 0px !important;
+        min-height: 35px !important;
+    }
+    
+    /* Xuyên thủng vào lớp thẻ <p> bên trong nút */
+    button[kind="secondary"] p {
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        font-size: 0.65rem !important; /* Thu nhỏ cỡ chữ mức tối đa để vừa cột */
+        letter-spacing: -0.5px !important; /* Kéo các chữ cái sát lại nhau */
+        margin: 0 !important;
+    }   
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -341,6 +358,7 @@ if st.session_state.user_role == 'admin':
                 st.divider()
         else:
             st.write("Chưa có dữ liệu phim.")
+
 
 
 # ------------------------------------------
@@ -567,23 +585,41 @@ elif st.session_state.current_page == 'booking':
             with col_sum1:
                 st.markdown(f"**Vị trí đã chọn:** {', '.join(st.session_state.selected_seats) if num_selected > 0 else 'Chưa chọn'}")
                 st.markdown(f"**Tổng Lệ phí:** <span style='color:#5C161B; font-size: 1.2rem; font-weight:bold;'>{total_price:,.0f} VNĐ</span>", unsafe_allow_html=True)
+            
+            # 1. TRONG CỘT BÊN PHẢI: Chỉ tạo nút bấm và gán vào một biến
             with col_sum2:
-                if st.button("TRẢ TIỀN & NHẬN VÉ", type="primary", use_container_width=True, disabled=(num_selected==0)):
-                    success_count = 0
-                    for seat in st.session_state.selected_seats:
-                        # Tách tọa độ (VD: 'A1' -> r=0, c=0)
-                        r = ord(seat[0]) - 65
-                        c = int(seat[1:]) - 1
-                        
-                        if booking_controller.process_booking(st.session_state.user_obj, m_data, st_data, r, c, movie_controller):
-                            success_count += 1
-                            
-                    if success_count == len(st.session_state.selected_seats):
-                        st.success("🎉 Giao dịch thành công! Xin kính chúc quý khách xem phim vui vẻ.")
-                        st.session_state.selected_seats = []
-                    else:
-                        st.error("⚠️ Có lỗi xảy ra hoặc ghế đã bị người khác giành mất!")
+                # Lưu ý: gán nút bấm vào biến dat_ve_xong
+                dat_ve_xong = st.button("TRẢ TIỀN & NHẬN VÉ", type="primary", use_container_width=True, disabled=(num_selected==0))
 
+            # =========================================================
+            # 2. LÙI LỀ RA NGOÀI CÙNG (Thẳng hàng với chữ `with col_sum2:`)
+            # =========================================================
+            if dat_ve_xong:
+                success_count = 0
+                for seat in st.session_state.selected_seats:
+                    # (Đoạn code tách r, c và process_booking của bạn giữ nguyên ở đây)
+                    r = ord(seat[0]) - 65
+                    c = int(seat[1:]) - 1
+                    
+                    if booking_controller.process_booking(st.session_state.user_obj, m_data, st_data, r, c, movie_controller):
+                        success_count += 1
+                        
+                if success_count == len(st.session_state.selected_seats):
+                    st.success("🎉 Giao dịch thành công! Xin kính chúc quý khách xem phim vui vẻ.")
+                    
+                    # --- BẮT ĐẦU ĐOẠN HIỂN THỊ MÃ QR TRÀN MÀN HÌNH ---
+                    st.write("---")
+                    st.markdown("<h4 style='text-align: center; color: #5C161B;'>Vui lòng quét mã QR dưới đây để hoàn tất thanh toán</h4>", unsafe_allow_html=True)
+                    
+                    # Chia 3 cột đều nhau trên toàn màn hình, nhét ảnh vào cột giữa
+                    col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1]) 
+                    with col_qr2:
+                        st.image("https://i.postimg.cc/zXCdCsg3/image.png", use_container_width=True)
+                    # --- KẾT THÚC ĐOẠN HIỂN THỊ MÃ QR ---
+
+                    st.session_state.selected_seats = []           
+                else:
+                    st.error("⚠️ Có lỗi xảy ra hoặc ghế đã bị người khác giành mất!")
 # ------------------------------------------
 # D. GIAO DIỆN KHÁCH HÀNG - LỊCH SỬ VÉ
 # ------------------------------------------
