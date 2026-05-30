@@ -34,6 +34,8 @@ if 'user_obj' not in st.session_state: st.session_state.user_obj = None # Lưu O
 if 'current_page' not in st.session_state: st.session_state.current_page = 'home'
 if 'selected_movie' not in st.session_state: st.session_state.selected_movie = ''
 if 'selected_seats' not in st.session_state: st.session_state.selected_seats = []
+if 'config_slider' not in st.session_state: st.session_state.config_slider= []
+if 'config_list' not in st.session_state: st.session_state.config_list = []
 
 # Khởi tạo Controllers một lần duy nhất lưu vào Session State
 if 'io_handler' not in st.session_state:
@@ -212,7 +214,7 @@ if st.session_state.user_role == 'admin':
     st.divider()
     
     # Chia Tab cho Admin
-    tab_manage, tab_top, tab_stats = st.tabs(["🎬 Quản Lý Phim", "🎞️ Top Doanh Thu", "🕰️ Thống Kê Tổng Quan"])
+    tab_manage, tab_display, tab_top = st.tabs(["Quản Lý Phim", "Cấu Hình Giao Diện", "Top Doanh Thu"])
     
     # TAB 1: QUẢN LÝ KHO PHIM (THÊM / SỬA / XÓA)
     with tab_manage:
@@ -308,6 +310,27 @@ if st.session_state.user_role == 'admin':
                     else:
                         st.error("Không thể xóa! Phim này đang có suất chiếu hoạt động hoặc khách đã mua vé.")
 
+    # TAB: CẤU HÌNH HIỂN THỊ TRANG CHỦ
+    with tab_display:
+        st.subheader("Cấu Hình Phim Hiển Thị Ở Sảnh Chính")
+        st.info("Tùy chọn những cuộn phim nào sẽ được phô diễn ra ngoài giao diện khách hàng.")
+        
+        all_movies = movie_controller.get_movie_data()
+        all_titles = [m.get_title() for m in all_movies]
+        
+        with st.form("display_config_form"):
+            new_slider = st.multiselect("Chọn phim chạy trên Bảng Trượt (Tối đa 3):", options=all_titles, default=st.session_state.config_slider if st.session_state.config_slider else all_titles[:3])
+            new_list = st.multiselect("Chọn phim xuất hiện ở Danh sách Tác Phẩm (Tối đa 8):", options=all_titles, default=st.session_state.config_list if st.session_state.config_list else all_titles[:8])
+            
+            if st.form_submit_button("LƯU CẤU HÌNH HIỂN THỊ", type="primary"):
+                if len(new_slider) > 3:
+                    st.error("Bảng trượt chỉ chứa được tối đa 3 tác phẩm!")
+                elif len(new_list) > 8:
+                    st.error("Danh sách bên dưới chỉ chứa được tối đa 8 tác phẩm!")
+                else:
+                    st.session_state.config_slider = new_slider
+                    st.session_state.config_list = new_list
+                    st.success("Đã lưu cấu hình! Bạn có thể về Sảnh Chính để xem thay đổi.")
     # TAB 2: TOP DOANH THU
     with tab_top: 
         top_movies = admin_controller.get_top_movies_by_revenue()
@@ -319,55 +342,106 @@ if st.session_state.user_role == 'admin':
         else:
             st.write("Chưa có dữ liệu phim.")
 
-    # TAB 3: JSON REPORT
-    with tab_stats:
-        st.json(admin_controller.generate_report())
 
 # ------------------------------------------
 # B. GIAO DIỆN KHÁCH HÀNG - TRANG CHỦ
 # ------------------------------------------
 elif st.session_state.current_page == 'home':
-    # --- SLIDER CỐ ĐỊNH NHƯ CŨ ---
+    # 1. LẤY DỮ LIỆU TỪ KHO PHIM VÀ CẤU HÌNH ADMIN
+    all_movies = movie_controller.get_movie_data()
+    
+    # Kiểm tra an toàn nếu cấu hình admin chưa được khởi tạo
+    if 'config_slider' not in st.session_state: st.session_state.config_slider = []
+    if 'config_list' not in st.session_state: st.session_state.config_list = []
+    
+    # Lọc phim theo đúng danh sách Admin đã chọn. Nếu Admin chưa chọn gì, lấy mặc định vài phim đầu tiên.
+    slider_movies = [m for m in all_movies if m.get_title() in st.session_state.config_slider]
+    if not slider_movies and all_movies: slider_movies = all_movies[:3]
+        
+    display_movies = [m for m in all_movies if m.get_title() in st.session_state.config_list]
+    if not display_movies and all_movies: display_movies = all_movies[:8]
+
+    # --- 2. TÍNH NĂNG MỚI: SLIDER ĐỘNG HOÀN TOÀN ---
     st.markdown("<h2 style='text-align: center; color: #5C161B; margin-bottom: 20px; z-index:10; position:relative;'>— TÂM ĐIỂM TUẦN NÀY —</h2>", unsafe_allow_html=True)
     
-    slider_html = """
-    <style>
-      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Courier+Prime:wght@400;700&display=swap');
-      body { margin: 0; background-color: transparent; font-family: 'Playfair Display', serif;}
-      .slider-container { width: 100%; height: 350px; position: relative; overflow: hidden; border: 4px double #D4AF37; border-radius: 10px; background: #2A080A; box-shadow: 0 10px 20px rgba(0,0,0,0.3);}
-      .slide { position: absolute; width: 100%; height: 100%; display: flex; transition: opacity 1s ease-in-out; opacity: 0; }
-      .slide.active { opacity: 1; z-index: 10; }
-      .poster { width: 35%; height: 100%; background-size: cover; background-position: center; border-right: 2px dashed #D4AF37; }
-      .content { width: 65%; padding: 30px; color: #FFF2C8; display: flex; flex-direction: column; justify-content: center; }
-      h1 { color: #D4AF37; font-size: 32px; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px; line-height: 1.2;}
-      p { font-family: 'Courier Prime', monospace; font-size: 15px; line-height: 1.6; color: #E8DCC4; margin-bottom: 15px;}
-      .tag { display: inline-block; border: 1px solid #D4AF37; padding: 5px 12px; font-size: 13px; margin-right: 10px; color: #D4AF37; font-family: 'Courier Prime', monospace;}
-      .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: #D4AF37; border: 1px solid #D4AF37; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; font-weight: bold; z-index: 20; transition: 0.3s;}
-      .nav-btn:hover { background: #D4AF37; color: #2A080A;}
-      .prev { left: 10px; } .next { right: 10px; }
-    </style>
-    <div class="slider-container">
-      <div class="slide active">
-        <div class="poster" style="background-image: url('https://images.unsplash.com/photo-1533158307598-773428a39dbd?q=80&w=1000');"></div>
-        <div class="content"><h1>Furiosa: Câu Chuyện Từ Mad Max</h1><p>Phần tiền truyện hoành tráng đưa khán giả trở lại Wasteland khắc nghiệt.</p><div><span class="tag">Hành Động</span></div></div>
-      </div>
-      <div class="slide">
-        <div class="poster" style="background-image: url('https://images.unsplash.com/photo-1616530940355-351fabd9524b?q=80&w=1000');"></div>
-        <div class="content"><h1>Hành Tinh Cát 2 (Dune: Part Two)</h1><p>Paul Atreides liên minh cùng Chani và người Fremen trên con đường trả thù.</p><div><span class="tag">Viễn Tưởng</span></div></div>
-      </div>
-      <button class="nav-btn prev" onclick="moveSlide(-1)">&#10094;</button><button class="nav-btn next" onclick="moveSlide(1)">&#10095;</button>
-    </div>
-    <script>
-      let currentSlide = 0; const slides = document.querySelectorAll('.slide');
-      function showSlide(index) { slides.forEach(s => s.classList.remove('active')); if(index>=slides.length) currentSlide=0; else if(index<0) currentSlide=slides.length-1; else currentSlide=index; slides[currentSlide].classList.add('active');}
-      function moveSlide(step) { showSlide(currentSlide + step); } setInterval(() => moveSlide(1), 4000);
-    </script>
-    """
-    components.html(slider_html, height=360)
+    if not slider_movies:
+        st.info("Hệ thống chưa thiết lập tác phẩm Tâm Điểm.")
+    else:
+        # Tạo chuỗi HTML chứa nội dung các slide động
+        slides_html_content = ""
+        for i, m in enumerate(slider_movies):
+            active_class = "active" if i == 0 else "" # Slide đầu tiên luôn hiển thị
+            img_url = m.get_poster_path() if m.get_poster_path() else "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1000&q=80"
+            desc = m.get_description() if m.get_description() else "Siêu phẩm điện ảnh kinh điển không thể bỏ lỡ tại Sunnyx Vintage Cinema."
+            
+            slides_html_content += f"""
+            <div class="slide {active_class}">
+                <div class="poster" style="background-image: url('{img_url}');"></div>
+                <div class="content">
+                    <h1>{m.get_title()}</h1>
+                    <p>{desc}</p>
+                    <div>
+                        <span class="tag">{m.get_genre()}</span>
+                        <span class="tag">⏳ {m.get_duration()} phút</span>
+                    </div>
+                </div>
+            </div>
+            """
 
-    # Đặt vé nhanh Động (Load từ Cấu trúc dữ liệu)
-    movie_list = movie_controller.get_movie_data()
-    movie_titles = [m.get_title() for m in movie_list] if movie_list else ["Hiện chưa có phim"]
+        # Bọc CSS và JS vào chuỗi f-string (những chỗ có ngoặc nhọn {} của CSS/JS phải nhân đôi thành {{}} để không bị lỗi Python)
+        slider_html = f"""
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Courier+Prime:wght@400;700&display=swap');
+          body {{ margin: 0; background-color: transparent; font-family: 'Playfair Display', serif;}}
+          .slider-container {{ width: 100%; height: 350px; position: relative; overflow: hidden; border: 4px double #D4AF37; border-radius: 10px; background: #2A080A; box-shadow: 0 10px 20px rgba(0,0,0,0.3);}}
+          .slide {{ position: absolute; width: 100%; height: 100%; display: flex; transition: opacity 1s ease-in-out; opacity: 0; }}
+          .slide.active {{ opacity: 1; z-index: 10; }}
+          .poster {{ width: 35%; height: 100%; background-size: cover; background-position: center; border-right: 2px dashed #D4AF37; }}
+          .content {{ width: 65%; padding: 30px; color: #FFF2C8; display: flex; flex-direction: column; justify-content: center; }}
+          h1 {{ color: #D4AF37; font-size: 32px; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}}
+          p {{ font-family: 'Courier Prime', monospace; font-size: 15px; line-height: 1.6; color: #E8DCC4; margin-bottom: 15px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;}}
+          .tag {{ display: inline-block; border: 1px solid #D4AF37; padding: 5px 12px; font-size: 13px; margin-right: 10px; color: #D4AF37; font-family: 'Courier Prime', monospace;}}
+          .nav-btn {{ position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: #D4AF37; border: 1px solid #D4AF37; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; font-weight: bold; z-index: 20; transition: 0.3s;}}
+          .nav-btn:hover {{ background: #D4AF37; color: #2A080A;}}
+          .prev {{ left: 10px; }} .next {{ right: 10px; }}
+        </style>
+
+        <div class="slider-container">
+          {slides_html_content}
+          <button class="nav-btn prev" onclick="moveSlide(-1)">&#10094;</button>
+          <button class="nav-btn next" onclick="moveSlide(1)">&#10095;</button>
+        </div>
+
+        <script>
+          let currentSlide = 0; 
+          const slides = document.querySelectorAll('.slide');
+          let slideInterval;
+
+          function showSlide(index) {{ 
+            slides.forEach(s => s.classList.remove('active')); 
+            if(index >= slides.length) currentSlide = 0; 
+            else if(index < 0) currentSlide = slides.length - 1; 
+            else currentSlide = index; 
+            slides[currentSlide].classList.add('active');
+          }}
+
+          function moveSlide(step) {{ 
+            showSlide(currentSlide + step); 
+            resetInterval();
+          }}
+          
+          function resetInterval() {{
+            clearInterval(slideInterval);
+            slideInterval = setInterval(() => moveSlide(1), 4000);
+          }}
+          resetInterval();
+        </script>
+        """
+        components.html(slider_html, height=360)
+
+    # --- 3. ĐẶT VÉ NHANH ĐỘNG ---
+    # Lấy toàn bộ tên phim để khách có thể mua bất kỳ phim nào trong kho (không chỉ những phim đang hiển thị)
+    movie_titles = [m.get_title() for m in all_movies] if all_movies else ["Hiện chưa có phim"]
     
     with st.container():
         st.markdown('<div class="vintage-ticket"><div class="ticket-title">🎟️ QUẦY BÁN VÉ NHANH</div>', unsafe_allow_html=True)
@@ -375,7 +449,7 @@ elif st.session_state.current_page == 'home':
         
         with qb1: 
             selected_fast_movie = st.selectbox("Chọn Cuộn Phim", movie_titles)
-        with qb2: st.selectbox("Ngày Chiếu", ["Hôm nay", "Ngày mai"]) # Có thể mở rộng mapping với start_time
+        with qb2: st.selectbox("Ngày Chiếu", ["Hôm nay", "Ngày mai"])
         with qb3: st.selectbox("Khung Giờ", ["09:30 (IMAX)", "13:15 (3D)", "20:30 (2D)"])
         with qb4: 
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
@@ -388,7 +462,7 @@ elif st.session_state.current_page == 'home':
                     navigate_to("booking", selected_fast_movie)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- RENDER CARD PHIM ĐỘNG ---
+    # --- 4. RENDER CÁC CARD PHIM TRÌNH CHIẾU THEO LỰA CHỌN ADMIN ---
     st.markdown("<h2 style='text-align: center; color: #5C161B; margin-top: 40px; margin-bottom: 30px; position:relative; z-index:10;'>— CÁC TÁC PHẨM TRÌNH CHIẾU —</h2>", unsafe_allow_html=True)
     st.markdown('<div class="movie-card-container">', unsafe_allow_html=True)
     
@@ -410,13 +484,12 @@ elif st.session_state.current_page == 'home':
                     else:
                         navigate_to("booking", title)
 
-    if not movie_list:
-        st.info("Hiện hệ thống chưa nhập dữ liệu phim vào kho.")
+    if not display_movies:
+        st.info("Hiện hệ thống chưa thiết lập phim hiển thị tại sảnh. Vui lòng liên hệ Admin.")
     else:
-        # Load phim từ hệ thống và chia thành các hàng 4 cột
+        # Load phim từ danh sách display_movies do Admin cấu hình (chia làm các hàng 4 cột)
         cols = st.columns(4)
-        for i, movie in enumerate(movie_list):
-            if i >= 8: break # Chỉ hiển thị tối đa 8 phim cho gọn trang
+        for i, movie in enumerate(display_movies):
             col = cols[i % 4]
             create_premium_movie_card(
                 col, 
@@ -426,8 +499,9 @@ elif st.session_state.current_page == 'home':
                 movie.get_base_price(), 
                 movie.get_poster_path()
             )
-            # Break line sau mỗi 4 phim
-            if (i + 1) % 4 == 0 and i != 7:
+            
+            # Xuống dòng sau mỗi 4 phim
+            if (i + 1) % 4 == 0 and i != (len(display_movies) - 1):
                 st.write("") 
                 cols = st.columns(4)
 
