@@ -217,12 +217,7 @@ class MovieController:
     # =================================================
 
     def sort_movies_by_revenue(self):
-
-        self._movie_list.sort_by_revenue_logic()
-
-        self._io_handler.save_movies(
-            self._movie_list
-        )
+        pass
 
     # =================================================
     # KIỂM TRA TỒN TẠI
