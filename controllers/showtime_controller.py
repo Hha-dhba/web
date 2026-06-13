@@ -1,25 +1,17 @@
-from models.entities import (
-    Showtime,
-    SeatStatus
-)
-
-from data_structures.linked_lists import (
-    ShowtimeLinkedList
-)
-
-from data_structures.file_io import (
-    FileIOHandler
-)
+from models.entities import Showtime, SeatStatus
+from data_structures.linked_lists import ShowtimeLinkedList
+from models.file_io import FileIOHandler
 
 class ShowtimeController:
 
     def __init__(
         self,
-        io_handler: FileIOHandler
+        io_handler: FileIOHandler,
+        movie_controller
     ):
 
         self._io_handler = io_handler
-
+        self._movie_controller = movie_controller
         self._showtime_list = (
             ShowtimeLinkedList()
         )
@@ -36,24 +28,29 @@ class ShowtimeController:
         while current is not None:
             st_id = current.get_data().get_showtime_id()
             try:
-                num = int(st_id[1:])
+                num_str = ""
+                idx = 0
+                for char in st_id:
+                    if idx > 0: 
+                        num_str += char
+                    idx += 1
+                    
+                num = int(num_str)
                 if num > max_id: 
                     max_id = num
             except ValueError: 
                 pass
             current = current.get_next()
             
-        # Đưa return ra ngoài thẳng hàng với lệnh while
         return f"S{max_id + 1:09d}"
         
     # =================================================
-    # ADD SHOWTIME (ĐÃ FIX: TỰ TÍNH END_TIME QUA MOVIE_CONTROLLER)
+    # ADD SHOWTIME 
     # =================================================
 
     def add_showtime(
         self,
-        st: Showtime,
-        movie_controller  # Truyền thêm movie_controller vào đây để mượn data phim
+        st: Showtime
     ) -> bool:
 
         from datetime import datetime, timedelta
@@ -67,9 +64,7 @@ class ShowtimeController:
         if existed:
             return False
 
-        # 1. TÍNH END_TIME CHO CA CHIẾU MỚI (ĐANG MUỐN THÊM)
-        # Vì hàm tìm kiếm của m trả về Node (theo liên kết đơn), ta phải .get_data() để lấy MovieData
-        movie_node_new = movie_controller.search_by_id(st.get_movie_id())
+        movie_node_new = self._movie_controller.search_by_id(st.get_movie_id())
         duration_new = 120  # Mặc định rạp phim là 120 phút nếu lỡ không tìm thấy phim
         
         if movie_node_new:
@@ -78,12 +73,16 @@ class ShowtimeController:
 
         format_str = "%Y-%m-%d %H:%M"
         
-        # Parse chuỗi start_time của ca mới thành đối tượng datetime để cộng trừ
-        if isinstance(st.get_start_time(), str):
-            start_new = datetime.strptime(st.get_start_time(), format_str)
-        else:
-            start_new = st.get_start_time()
-            
+        
+        # 1. Validate và Parse ngày giờ an toàn
+        try:
+            if isinstance(st.get_start_time(), str):
+                start_new = datetime.strptime(st.get_start_time(), format_str)
+            else:
+                start_new = st.get_start_time()
+        except ValueError:
+            # Nếu Admin nhập sai định dạng, hàm trả về False để UI báo lỗi
+            return False  
         # Thời gian kết thúc = Bắt đầu + Thời lượng phim
         end_new = start_new + timedelta(minutes=duration_new)
 
@@ -100,7 +99,7 @@ class ShowtimeController:
             if old_st.get_room_id() == st.get_room_id():
                 
                 # 2. TÍNH END_TIME CHO CA CHIẾU CŨ (ĐANG CÓ TRÊN HỆ THỐNG)
-                movie_node_old = movie_controller.search_by_id(old_st.get_movie_id())
+                movie_node_old = self._movie_controller.search_by_id(old_st.get_movie_id())
                 duration_old = 120
                 if movie_node_old:
                     movie_old = movie_node_old.get_data()
@@ -146,7 +145,7 @@ class ShowtimeController:
 
         st = node.get_data()
 
-        st._start_time = new_start_time
+        st.set_start_time(new_start_time)
 
         self._io_handler.save_showtimes(
             self._showtime_list
@@ -179,7 +178,12 @@ class ShowtimeController:
                     ==
                     showtime_id
                 ):
-                    return False
+                    status = str(
+                    ticket.get_status()
+                ).strip().upper()
+
+                    if status in ["BOOKED", "RESERVED"]:
+                        return False
 
         success = (
             self._showtime_list
@@ -331,9 +335,7 @@ class ShowtimeController:
 
         while current is not None:
 
-            result.append(
-                current.get_data()
-            )
+            result += [current.get_data()]
 
             current = (
                 current.get_next()
@@ -356,75 +358,63 @@ class ShowtimeController:
     # =================================================
     # LẤY DANH SÁCH PHIM & SUẤT CHIẾU THEO NGÀY
     # =================================================
-    def get_schedule_by_date(self, target_date: str, movie_controller):
-        """
-        Trả về danh sách các phim CÓ CHIẾU trong ngày target_date,
-        kèm theo danh sách các suất chiếu của phim đó.
-        """
-        # Cấu trúc: { movie_id: {"movie": MovieData, "showtimes": [st1, st2]} }
-        daily_schedule = {}
+    def get_schedule_by_date(self, target_date: str):
+        daily_schedule = []
         
         current = self._showtime_list.get_head()
+
         while current is not None:
             st = current.get_data()
-            start_time_str = st.get_start_time()
-            
             # Nếu suất chiếu khớp với ngày khách chọn
-            if isinstance(start_time_str, str) and start_time_str.startswith(target_date):
+            if self.extract_date(st) == target_date:
                 movie_id = st.get_movie_id()
                 
-                # Nếu phim này chưa có trong nhóm, ta gọi movie_controller tìm phim và tạo nhóm mới
-                if movie_id not in daily_schedule:
-                    movie_node = movie_controller.search_by_id(movie_id)
-                    if movie_node is not None:
-                        daily_schedule[movie_id] = {
-                            "movie": movie_node.get_data(),
-                            "showtimes": []
-                        }
+                found_group = None
+
+                # Tìm xem phim đã tồn tại trong danh sách chưa
+                for group in daily_schedule:
+                    if group[0].get_movie_id() == movie_id:
+                        found_group = group
+                        break
                 
-                # Nhét suất chiếu vào danh sách của phim tương ứng
-                if movie_id in daily_schedule:
-                    daily_schedule[movie_id]["showtimes"].append(st)
+                # Nếu chưa có thì tạo nhóm mới
+                if found_group is None:
+                    movie_node = self._movie_controller.search_by_id(movie_id)
+                    if movie_node is not None:
+                        found_group = [
+                            movie_node.get_data(),
+                            []
+                        ]
+                        daily_schedule += [found_group]
+                
+                # Thêm suất chiếu vào nhóm phim tương ứng
+                if found_group is not None:
+                    found_group[1] += [st]
                     
             current = current.get_next()
-            
-        # Trả về list các nhóm để giao diện Streamlit dễ dùng vòng lặp
-        return list(daily_schedule.values())
+        return daily_schedule
     # =================================================
     # HÀM HỖ TRỢ TÁCH NGÀY GIỜ CHO GIAO DIỆN
     # =================================================
     def extract_date(self, showtime):
         """Tách lấy ngày từ object Showtime"""
         start = str(showtime.get_start_time())
-        return start.split()[0] if " " in start else start
-
-    def extract_time(self, showtime):
-        """Tách lấy giờ từ object Showtime"""
-        start = str(showtime.get_start_time())
-        return start.split()[1] if " " in start else ""
-    # =================================================
-    # HÀM HỖ TRỢ XỬ LÝ CHUỖI & MẢNG (CODE TAY 100%)
-    # =================================================
-    
-    def extract_date(self, showtime):
-        """Tách ngày bằng vòng lặp, duyệt đến khi gặp khoảng trắng thì dừng"""
-        start = str(showtime.get_start_time())
         date_str = ""
         for char in start:
-            if char == " ":
+            if char == " ":  # Gặp khoảng trắng thì dừng (chỉ lấy phần trước khoảng trắng)
                 break
             date_str += char
         return date_str
 
     def extract_time(self, showtime):
-        """Tách giờ bằng vòng lặp, lấy các ký tự sau khoảng trắng"""
+        """Tách lấy giờ từ object Showtime"""
         start = str(showtime.get_start_time())
         time_str = ""
         found_space = False
         for char in start:
             if found_space:
                 time_str += char
-            elif char == " ":
+            elif char == " ": # Bắt đầu lấy ký tự từ sau khoảng trắng
                 found_space = True
         return time_str
 
@@ -433,7 +423,7 @@ class ShowtimeController:
         # 1. Lấy tất cả các ngày
         raw_dates = []
         for s in showtimes_list:
-            raw_dates.append(self.extract_date(s))
+            raw_dates += [self.extract_date(s)]
             
         # 2. Lọc trùng (Thay cho set)
         unique_dates = []
@@ -444,7 +434,7 @@ class ShowtimeController:
                     is_duplicate = True
                     break
             if not is_duplicate and d != "":
-                unique_dates.append(d)
+                unique_dates += [d]
                 
         # 3. Thuật toán sắp xếp nổi bọt (Thay cho sorted)
         n = len(unique_dates)
@@ -462,7 +452,7 @@ class ShowtimeController:
         """Lọc trùng và Sắp xếp mảng Giờ (Bubble Sort)"""
         raw_times = []
         for s in showtimes_list:
-            raw_times.append(self.extract_time(s))
+            raw_times += [self.extract_time(s)]
             
         unique_times = []
         for t in raw_times:
@@ -472,7 +462,7 @@ class ShowtimeController:
                     is_duplicate = True
                     break
             if not is_duplicate and t != "":
-                unique_times.append(t)
+                unique_times += [t]
                 
         n = len(unique_times)
         for i in range(n):

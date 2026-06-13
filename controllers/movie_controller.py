@@ -1,6 +1,6 @@
 from models.entities import (MovieData)
 from data_structures.linked_lists import (MovieLinkedList)
-from data_structures.file_io import FileIOHandler
+from models.file_io import FileIOHandler
 
 
 # =====================================================
@@ -72,6 +72,14 @@ class MovieController:
 
         if node is None:
             return False
+        
+        existing_node = self.search_by_title(title)
+        if existing_node is not None:
+            existing_movie = existing_node.get_data()
+            # Chỉ báo lỗi nếu tìm thấy phim KHÁC trùng tên
+            # (không phải chính bộ phim đang được sửa)
+            if existing_movie.get_movie_id() != movie_id:
+                raise ValueError("Tên phim này đã tồn tại trong hệ thống!")
 
         movie = node.get_data()
 
@@ -105,37 +113,10 @@ class MovieController:
     # XÓA PHIM
     # =================================================
 
-    def delete_movie(
-        self,
-        movie_id: str,
-        showtime_controller
-    ) -> bool:
-
-        # không cho xóa nếu còn suất chiếu
-        showtimes = (
-            showtime_controller
-            .get_showtime_data()
-        )
-
-        for st in showtimes:
-
-            if (
-                st.get_movie_id()
-                == movie_id
-            ):
-                return False
-
-        success = (
-            self._movie_list
-            .remove_movie(movie_id)
-        )
-
+    def delete_movie(self, movie_id: str) -> bool:
+        success = self._movie_list.remove_movie(movie_id)
         if success:
-
-            self._io_handler.save_movies(
-                self._movie_list
-            )
-
+            self._io_handler.save_movies(self._movie_list)
         return success
 
     # =================================================
@@ -181,22 +162,13 @@ class MovieController:
 
         while current is not None:
 
-            result.append(
-                current.get_data()
-            )
+            result += [current.get_data()]
 
             current = (
                 current.get_next()
             )
 
         return result
-
-    # =================================================
-    # SẮP XẾP DOANH THU
-    # =================================================
-
-    def sort_movies_by_revenue(self):
-        pass
 
     # =================================================
     # KIỂM TRA TỒN TẠI
@@ -217,5 +189,16 @@ class MovieController:
         """Cho phép các controller khác yêu cầu lưu file phim"""
         self._io_handler.save_movies(self._movie_list)
 
+    # =================================================
+    # QUẢN LÝ CẤU HÌNH GIAO DIỆN
+    # =================================================
+
+    def load_ui_config(self):
+        """Gọi xuống tầng IO để tải cấu hình hiển thị sảnh chính"""
+        return self._io_handler.load_ui_config()
+        
+    def save_ui_config(self, slider_titles, list_titles):
+        """Gọi xuống tầng IO để lưu cấu hình hiển thị sảnh chính"""
+        self._io_handler.save_ui_config(slider_titles, list_titles)
 
 
